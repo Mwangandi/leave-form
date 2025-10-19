@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leave Calendar</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        body { 
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .calendar-container {
+            margin-bottom: 20px;
+        }
+        #leaveDates {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .weekend {
+            color: #999;
+        }
+        .date-list {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 10px;
+        }
+        .date-item {
+            padding: 3px 0;
+        }
+        
+        /* Custom style for blocked dates */
+        .flatpickr-day.blocked {
+            position: relative;
+            color: #ccc !important;
+            background: #ffebee !important;
+            border-color: #ffebee !important;
+            cursor: not-allowed;
+        }
+        .flatpickr-day.blocked::after {
+            content: "✕";
+            color: white;
+            background: #f44336;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+        }
+        
+        /* Style for weekends */
+        .flatpickr-day.weekend {
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <h1>Leave Request</h1>
+    
+    <div class="calendar-container">
+        <label for="leaveDates">Select Leave Dates (weekends allowed but not counted):</label>
+        <input type="text" id="leaveDates" placeholder="Select date range">
+    </div>
+    
+    <div class="results" id="results" style="display: none;">
+        <h3>Leave Details</h3>
+        <p><strong>Selected Range:</strong> <span id="selectedRange"></span></p>
+        <p><strong>Total Days Selected:</strong> <span id="totalDaysCount"></span></p>
+        <p><strong>Working Days (leave days):</strong> <span id="leaveDaysCount"></span></p>
+        <p><strong>Weekend Days (not counted):</strong> <span id="weekendDaysCount"></span></p>
+        
+        <div class="date-list" id="dateList"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const leaveDatesInput = document.getElementById('leaveDates');
+            
+            // Initialize flatpickr
+            const picker = flatpickr(leaveDatesInput, {
+                mode: "range",
+                minDate: "today",
+                dateFormat: "Y-m-d",
+                onDayCreate: function(dObj, dStr, fp, dayElem) {
+                    // Style weekends
+                    const date = new Date(dayElem.dateObj);
+                    if (date.getDay() === 0 || date.getDay() === 6) {
+                        dayElem.classList.add("weekend");
+                    }
+                    
+                    // Style blocked (past) dates
+                    if (date < today) {
+                        dayElem.classList.add("blocked");
+                    }
+                },
+                onChange: function(selectedDates, dateStr, instance) {
+                    if (selectedDates.length === 2) {
+                        const startDate = new Date(selectedDates[0]);
+                        const endDate = new Date(selectedDates[1]);
+                        
+                        // Format dates for display
+                        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+                        const formattedStart = startDate.toLocaleDateString(undefined, options);
+                        const formattedEnd = endDate.toLocaleDateString(undefined, options);
+                        
+                        // Calculate days
+                        const { totalDays, workingDays, weekendDays, dateDetails } = calculateDays(startDate, endDate);
+                        
+                        // Display results
+                        document.getElementById('selectedRange').textContent = 
+                            `${formattedStart} to ${formattedEnd}`;
+                        document.getElementById('totalDaysCount').textContent = totalDays;
+                        document.getElementById('leaveDaysCount').textContent = workingDays;
+                        document.getElementById('weekendDaysCount').textContent = weekendDays;
+                        
+                        // Display date list
+                        const dateList = document.getElementById('dateList');
+                        dateList.innerHTML = '';
+                        dateDetails.forEach(detail => {
+                            const dateItem = document.createElement('div');
+                            dateItem.className = `date-item ${detail.isWeekend ? 'weekend' : ''}`;
+                            dateItem.textContent = `${detail.dateStr} (${detail.dayName})${detail.isWeekend ? ' - Weekend' : ''}`;
+                            dateList.appendChild(dateItem);
+                        });
+                        
+                        document.getElementById('results').style.display = 'block';
+                    } else {
+                        document.getElementById('results').style.display = 'none';
+                    }
+                }
+            });
+            
+            /**
+             * Calculate all days between two dates with weekend detection
+             * @param {Date} startDate - Start date of the range
+             * @param {Date} endDate - End date of the range
+             * @returns {object} Object containing counts and date details
+             */
+            function calculateDays(startDate, endDate) {
+                let workingDays = 0;
+                let weekendDays = 0;
+                const dateDetails = [];
+                const current = new Date(startDate);
+                const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                
+                // Set time to noon to avoid DST issues
+                current.setHours(12, 0, 0, 0);
+                endDate.setHours(12, 0, 0, 0);
+                
+                // Format individual date
+                const formatDate = (date) => {
+                    return date.toLocaleDateString(undefined, { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric' 
+                    });
+                };
+                
+                while (current <= endDate) {
+                    const day = current.getDay();
+                    const isWeekend = (day === 0 || day === 6);
+                    const dateStr = formatDate(new Date(current));
+                    const dayName = dayNames[day];
+                    
+                    if (isWeekend) {
+                        weekendDays++;
+                    } else {
+                        workingDays++;
+                    }
+                    
+                    dateDetails.push({
+                        date: new Date(current),
+                        dateStr,
+                        dayName,
+                        isWeekend
+                    });
+                    
+                    current.setDate(current.getDate() + 1);
+                }
+                
+                return {
+                    totalDays: workingDays + weekendDays,
+                    workingDays,
+                    weekendDays,
+                    dateDetails
+                };
+            }
+        });
+    </script>
+</body>
+</html>
